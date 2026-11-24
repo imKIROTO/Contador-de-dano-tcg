@@ -72,11 +72,8 @@ input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1.5px
 .res small{display:block;color:var(--mute);font-weight:500}
 .thumb{width:62px;flex:none;border-radius:6px}
 .tile.im{background-repeat:no-repeat;background-position:right 10px center;background-size:auto 86%;padding-right:84px}
-.cam{position:relative;background:#000;border-radius:16px;overflow:hidden;max-width:300px;margin:10px auto 0}
-.cam video{width:100%;display:block}
-.cam i{position:absolute;top:6%;height:88%;left:50%;aspect-ratio:63/88;transform:translateX(-50%);border:3px solid rgba(255,255,255,.7);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.4)}
 .note{color:var(--mute);font-size:13px;margin:8px 0 2px}
-#dbg canvas{display:block;max-width:100%;height:auto;margin:6px 0;border:1px solid var(--line);border-radius:6px}
+.stat{text-align:center;margin:0 0 10px}
 </style>
 </head>
 <body>
@@ -89,7 +86,7 @@ const EX=['sleep','para','conf'];
 let S=null,view='home',ui=null,armed=false,armT;
 try{S=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
 if(!S||!S.p)S=null;
-const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
+const save=()=>{if(S&&S.mode==='net'){sync();return}try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
 const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 const rem=c=>Math.max(0,c.hp-c.dmg);
 const slot=(p,s)=>S.p[p].slots[s];
@@ -108,21 +105,21 @@ function field(p,label){
 }
 function home(){
   return `<h1>Marcador de vida</h1><p class="sub">Dano, condições e vida restante dos Pokémon na mesa.</p>
-  ${S?`<button class="mode" data-a="cont"><span class="ic">▶️</span><span><b>Continuar partida</b><small>Voltar de onde parou</small></span></button>`:''}
+  ${S&&S.mode!=='net'?`<button class="mode" data-a="cont"><span class="ic">▶️</span><span><b>Continuar partida</b><small>Voltar de onde parou</small></span></button>`:''}
   <button class="mode" data-a="new" data-m="solo"><span class="ic">🎯</span><span><b>Solo</b><small>Só o seu campo</small></span></button>
   <button class="mode" data-a="new" data-m="duo"><span class="ic">🤝</span><span><b>2 jogadores, 1 celular</b><small>Seu campo e o do adversário</small></span></button>
-  <button class="mode" disabled><span class="ic">📡</span><span><b>Sala local<span class="tag">em breve</span></b><small>Cada um no seu celular. Você vê o campo do outro, mas só edita o seu.</small></span></button>`;
+  <button class="mode" data-a="room"><span class="ic">📡</span><span><b>Sala local</b><small>Cada um no seu celular. Você vê o campo do outro, mas só edita o seu.</small></span></button>`;
 }
 function game(){
-  const duo=S.mode==='duo';
-  return `<div class="top"><button class="btn" data-a="home">‹ Início</button><button class="btn bad" data-a="reset">${armed?'Toque para confirmar':'Limpar campo'}</button></div>`+(duo?field(1,'Jogador 2')+field(0,'Jogador 1'):field(0,'Seu campo'));
+  const duo=S.mode==='duo',net=S.mode==='net';
+  return `<div class="top"><button class="btn" data-a="${net?'leave':'home'}">‹ ${net?'Sair':'Início'}</button><button class="btn bad" data-a="reset">${armed?'Toque para confirmar':net?'Limpar meu campo':'Limpar campo'}</button></div>`
+  +(net?`<p class="note stat">Sala ${room}: ${link==='on'?'conectado':'<b style="color:var(--bad)">desconectado</b>'}</p>`:'')
+  +(net?field(1,'Adversário')+field(0,'Você'):duo?field(1,'Jogador 2')+field(0,'Jogador 1'):field(0,'Seu campo'));
 }
 function addPanel(){
   return `<div class="row"><div class="big">${ui.s?'Novo no banco':'Novo Pokémon ativo'}</div><button class="btn" data-a="close">Fechar</button></div>
   <input id="nm" placeholder="Digite o nome para buscar a carta" autocomplete="off" maxlength="30">
   <div id="res"></div>
-  <button class="btn wide" data-a="scan">Escanear carta</button>
-  <div id="cam"></div>
   <p class="note">Sem resultado? Informe a vida à mão:</p>
   <input id="hv" type="number" inputmode="numeric" placeholder="Vida (PS) da carta">
   <div class="chips">${[60,90,120,150,180,230,300].map(v=>`<button class="chip" data-a="hp" data-v="${v}">${v}</button>`).join('')}</div>
@@ -142,7 +139,7 @@ function cardPanel(c){
   <div class="row">${ui.s?'<button class="btn" data-a="swap">Trocar com o ativo</button>':'<span></span>'}<button class="btn bad" data-a="del">Remover da mesa</button></div>`;
 }
 const API='https://api.tcgdex.net/v2/',LANGS=['pt','en'];
-let tmr,stream,ocr,loop,busy=false,tries=0;
+let tmr;
 const setRes=h=>{const r=$('#res');if(r)r.innerHTML=h};
 const note=t=>setRes(`<p class="note">${t}</p>`);
 async function api(path){
@@ -173,103 +170,70 @@ document.addEventListener('input',e=>{
   if(e.target.id!=='nm')return;
   clearTimeout(tmr);const v=e.target.value;tmr=setTimeout(()=>search(v),450);
 });
-const SKIP=/^(basico|básico|basic|fase|stage|pokemon|pokémon|evolui|evolves|from)$/i;
-const words=t=>(t.match(/[A-Za-zÀ-ÿ]{3,}/g)||[]).filter(w=>!SKIP.test(w));
-const parseNum=t=>{
-  const m=t.match(/(\d{1,3})\s*[\/|]\s*(\d{2,3})/);
-  if(m)return parseInt(m[1],10);
-  const r=(t.match(/\d{7}/)||[])[0];
-  return r&&r[3]==='1'?parseInt(r.slice(0,3),10):0;
-};
-const setSt=t=>{const e=$('#stt');if(e)e.textContent=t};
-function crop(v,sx,sy,sw,sh,maxw){
-  const k=document.createElement('canvas'),f=Math.min(3,maxw/sw);
-  k.width=Math.round(sw*f);k.height=Math.round(sh*f);
-  k.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,k.width,k.height);
-  return k;
+let peer,conn,room='',link='off',rerr='',stash=null;
+const PID='ptcgvida-',ALF='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function sync(){if(S&&S.mode==='net'&&conn&&conn.open)conn.send({t:'s',s:S.p[0].slots})}
+const clean=c=>c?{name:String(c.name).slice(0,40),hp:Math.max(1,+c.hp||1),dmg:Math.max(0,+c.dmg||0),st:(Array.isArray(c.st)?c.st:[]).filter(k=>ST[k]),img:/^https:\/\/assets\.tcgdex\.net\//.test(c.img)?c.img:''}:null;
+const loadPeer=()=>window.Peer?Promise.resolve():new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
+function closeNet(){try{conn&&conn.close();peer&&peer.destroy()}catch(e){}conn=peer=null;link='off'}
+function fail(m){closeNet();rerr=m;view='room';render()}
+function leave(){closeNet();if(S&&S.mode==='net'){S=stash;stash=null}rerr='';view='home';ui=null;render()}
+function attach(c){
+  if(conn&&conn.open&&c!==conn){c.close();return}
+  conn=c;
+  const go=()=>{
+    if(!S||S.mode!=='net'){stash=S;S={mode:'net',p:[0,1].map(()=>({slots:Array(6).fill(null)}))}}
+    link='on';view='game';sync();render();
+  };
+  c.on('open',go);
+  if(c.open)go();
+  c.on('data',m=>{
+    if(m&&m.t==='s'&&Array.isArray(m.s)&&S&&S.mode==='net'){S.p[1].slots=m.s.slice(0,6).map(clean);render()}
+  });
+  c.on('close',()=>{link='off';render()});
 }
-function prep(k,bin){
-  const g=k.getContext('2d'),im=g.getImageData(0,0,k.width,k.height),d=im.data,n=k.width*k.height,gy=new Uint8Array(n),h=new Array(256).fill(0);
-  for(let i=0;i<n;i++){const y=(d[i*4]*.299+d[i*4+1]*.587+d[i*4+2]*.114)|0;gy[i]=y;h[y]++}
-  let lo=0,hi=255,a=0,t=128,wh=0;
-  while(lo<254&&(a+=h[lo])<n*.02)lo++;
-  a=0;while(hi>1&&(a+=h[hi])<n*.02)hi--;
-  if(bin){
-    let sum=0,sb=0,wb=0,mx=0;
-    for(let i=0;i<256;i++)sum+=i*h[i];
-    for(let i=0;i<256;i++){wb+=h[i];const wf=n-wb;if(!wb||!wf)continue;sb+=i*h[i];const m1=sb/wb,m2=(sum-sb)/wf,v=wb*wf*(m1-m2)*(m1-m2);if(v>mx){mx=v;t=i}}
-    for(let i=0;i<n;i++)if(gy[i]>t)wh++;
-  }
-  const inv=bin&&wh<n/2;
-  for(let i=0;i<n;i++){
-    let y=bin?(gy[i]>t?255:0):Math.min(255,Math.max(0,(gy[i]-lo)*255/Math.max(1,hi-lo)));
-    if(inv)y=255-y;
-    d[i*4]=d[i*4+1]=d[i*4+2]=y;
-  }
-  g.putImageData(im,0,0);return k;
+async function host(){
+  closeNet();rerr='';
+  try{await loadPeer()}catch(e){fail('Não consegui carregar a conexão. Verifique a internet.');return}
+  room=Array.from({length:4},()=>ALF[Math.random()*ALF.length|0]).join('');
+  peer=new Peer(PID+room);
+  peer.on('open',()=>{link='wait';view='room';render()});
+  peer.on('connection',attach);
+  peer.on('error',e=>{if(e.type==='unavailable-id')host();else fail('Não consegui criar a sala ('+e.type+').')});
 }
-async function ocrRead(k,psm,wl){
-  await ocr.setParameters({tessedit_pageseg_mode:psm,tessedit_char_whitelist:wl});
-  return (await ocr.recognize(k)).data.text;
+async function join(code){
+  code=code.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(code.length!==4){rerr='Digite o código de 4 letras.';render();return}
+  closeNet();rerr='';
+  try{await loadPeer()}catch(e){fail('Não consegui carregar a conexão. Verifique a internet.');return}
+  room=code;link='join';render();
+  peer=new Peer();
+  peer.on('open',()=>attach(peer.connect(PID+room,{reliable:true})));
+  peer.on('error',e=>fail(e.type==='peer-unavailable'?'Sala não encontrada. Confira o código.':'Erro de conexão ('+e.type+').'));
+  setTimeout(()=>{if(link==='join')fail('Não consegui conectar. Confira o código e se os dois estão com internet.')},15000);
 }
-async function loadOcr(){
-  if(ocr)return;
-  if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
-  ocr=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status)setSt('Preparando o leitor: '+m.status+' '+Math.round((m.progress||0)*100)+'%')}});
+function roomView(){
+  const top='<div class="top"><button class="btn" data-a="leave">‹ Início</button></div>';
+  if(link==='wait')return top+`<h1>Sala ${room}</h1><p class="sub">Peça para o seu amigo tocar em “Entrar em uma sala” e digitar este código. Aguardando…</p>`;
+  if(link==='join')return top+`<h1>Entrando…</h1><p class="sub">Conectando à sala ${room}</p>`;
+  return top+`<h1>Sala local</h1><p class="sub">Cada um joga no seu celular e vê o campo do outro.</p>
+  <button class="mode" data-a="host"><span class="ic">➕</span><span><b>Criar sala</b><small>Você recebe um código de 4 letras</small></span></button>
+  <div class="field"><h2>Entrar em uma sala</h2><div class="row"><input id="rc" placeholder="Código" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="btn pri" data-a="join">Entrar</button></div><p class="err">${rerr}</p></div>`;
 }
-async function startCam(){
-  stopCam();
-  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})}
-  catch(e){note('Não consegui abrir a câmera. Permita o acesso e abra a página por HTTPS.');return}
-  $('#cam').innerHTML='<div class="cam"><video id="v" playsinline muted autoplay></video><i></i></div><p class="note" id="stt">Abrindo…</p><div id="dbg"></div><button class="btn wide" data-a="stopcam">Parar câmera</button>';
-  const v=$('#v');v.srcObject=stream;
-  try{await v.play()}catch(e){}
-  try{await stream.getVideoTracks()[0].applyConstraints({advanced:[{focusMode:'continuous'}]})}catch(e){}
-  try{await loadOcr()}catch(e){setSt('Não consegui baixar o leitor de texto. Verifique a internet.');return}
-  if(!stream)return;
-  tries=0;busy=false;setSt('Encaixe a carta na moldura, de frente e sem reflexo. Lendo automaticamente…');
-  loop=setInterval(attempt,900);
-}
-function stopCam(){
-  clearInterval(loop);busy=false;
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-  const b=$('#cam');if(b)b.innerHTML='';
-}
-async function attempt(){
-  const v=$('#v');
-  if(busy||!ocr||!v||!v.videoWidth)return;
-  busy=true;tries++;
-  try{
-    const vh=v.videoHeight,h=vh*.88,w=h*63/88,x=(v.videoWidth-w)/2,y=vh*.06;
-    const nameC=bin=>prep(crop(v,x+w*.1,y+h*.02,w*.62,h*.11,1200),bin);
-    const numC=bin=>prep(crop(v,x,y+h*.9,w,h*.1,1400),bin);
-    const nb=nameC(true),mb=numC(true);
-    let ws=words(await ocrRead(nb,'11',''));
-    if(!ws.length)ws=words(await ocrRead(nameC(false),'11',''));
-    let num=parseNum(await ocrRead(mb,'11','0123456789/'));
-    if(!num)num=parseNum(await ocrRead(numC(false),'11','0123456789/'));
-    if(!stream)return;
-    ws=[...new Set(ws)].sort((a,b)=>b.length-a.length).slice(0,3);
-    const d=$('#dbg');if(d)d.replaceChildren(nb,mb);
-    setSt('Tentativa '+tries+': nome “'+(ws.join(', ')||'não li')+'”, número '+(num||'não li'));
-    for(const w1 of ws){
-      const list=await api('cards?name='+encodeURIComponent(w1));
-      if(!stream)return;
-      if(!list)continue;
-      const hit=num?list.filter(c=>parseInt(c.localId,10)===num):[];
-      if(hit.length===1||(!num&&list.length===1)){pick((hit[0]||list[0]).id);return}
-      if(hit.length>1){stopCam();$('#nm').value=w1;search(w1,num);return}
-    }
-    if(tries>=5&&ws.length){const w1=ws[0];stopCam();$('#nm').value=w1;search(w1,num)}
-  }catch(e){setSt('Erro na leitura, tentando de novo…')}
-  finally{busy=false}
+function viewPanel(c){
+  const r=rem(c);
+  return `<div class="row"><div><div class="big">${esc(c.name)}</div><div class="mute">${ui.s?'No banco':'Ativo'} do adversário, somente leitura</div></div>${c.img?`<img class="thumb" src="${c.img}/high.webp" alt="">`:''}<button class="btn" data-a="close">Fechar</button></div>
+  <div class="life"><b style="${r?'':'color:var(--bad)'}">${r}</b><span>de ${c.hp} PS</span>${r?'':'<em>Nocauteado</em>'}</div>
+  ${bar(c,'big')}
+  <p class="lbl">Dano recebido: ${c.dmg}</p>
+  <div class="chips">${c.st.length?c.st.map(k=>`<span class="chip on">${ST[k][0]} ${ST[k][1]}</span>`).join(''):'<span class="mute">Sem condições especiais</span>'}</div>`;
 }
 function render(){
-  if(!ui)stopCam();
-  $('#app').innerHTML=view==='game'&&S?game():home();
+  if(ui&&ui.ro&&!slot(ui.p,ui.s))ui=null;
+  $('#app').innerHTML=view==='game'&&S?game():view==='room'?roomView():home();
   const el=$('#sheet'),c=ui&&slot(ui.p,ui.s);
   el.hidden=!ui;
-  el.innerHTML=ui?`<div class="panel">${c?cardPanel(c):addPanel()}</div>`:'';
+  el.innerHTML=ui?`<div class="panel">${c?(ui.ro?viewPanel(c):cardPanel(c)):addPanel()}</div>`:'';
 }
 document.addEventListener('click',e=>{
   if(e.target.id==='sheet'){ui=null;render();return}
@@ -281,14 +245,18 @@ document.addEventListener('click',e=>{
   else if(a==='home'){view='home';ui=null;render()}
   else if(a==='reset'){
     if(!armed){armed=true;armT=setTimeout(()=>{armed=false;render()},3000);render()}
-    else{clearTimeout(armT);armed=false;S.p.forEach(x=>x.slots.fill(null));done()}
+    else{clearTimeout(armT);armed=false;(S.mode==='net'?[S.p[0]]:S.p).forEach(x=>x.slots.fill(null));done()}
   }
-  else if(a==='open'){ui={p:+d.p,s:+d.s};render();setTimeout(()=>{const n=$('#nm');n&&n.focus()},60)}
+  else if(a==='open'){
+    if(S.mode==='net'&&+d.p===1){if(slot(1,+d.s)){ui={p:1,s:+d.s,ro:true};render()}return}
+    ui={p:+d.p,s:+d.s};render();setTimeout(()=>{const n=$('#nm');n&&n.focus()},60)}
   else if(a==='close'){ui=null;render()}
   else if(a==='hp'){$('#hv').value=d.v}
   else if(a==='pick'){pick(d.id)}
-  else if(a==='scan'){startCam()}
-  else if(a==='stopcam'){stopCam()}
+  else if(a==='room'){view='room';render()}
+  else if(a==='host'){host()}
+  else if(a==='join'){join($('#rc').value)}
+  else if(a==='leave'){leave()}
   else if(a==='add'){
     const n=$('#nm').value.trim(),h=parseInt($('#hv').value,10);
     if(!n||!(h>0)){$('#err').textContent='Preencha o nome e a vida (PS) da carta.';return}
