@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marcador de vida Pokémon TCG</title>
+<style>
+:root{--bg:#edf1f7;--surface:#fff;--ink:#14213d;--mute:#5d6b86;--line:#d5dcea;--accent:#2f4fd8;--on-accent:#fff;--good:#1f9d63;--warn:#e0a100;--bad:#d1372d;--track:#e1e7f2;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1424;--surface:#16203a;--ink:#eaf0ff;--mute:#9aa8c7;--line:#2a3757;--accent:#ffd23f;--on-accent:#1a1500;--good:#3ed08f;--warn:#ffc933;--bad:#ff6f64;--track:#232f4d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0d1424;--surface:#16203a;--ink:#eaf0ff;--mute:#9aa8c7;--line:#2a3757;--accent:#ffd23f;--on-accent:#1a1500;--good:#3ed08f;--warn:#ffc933;--bad:#ff6f64;--track:#232f4d;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.35 ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#app{max-width:520px;margin:0 auto;padding:16px 14px 32px}
+h1{font-size:32px;line-height:1.05;letter-spacing:-.03em;margin:14px 0 6px}
+.sub{color:var(--mute);margin:0 0 22px}
+.mode{display:flex;gap:14px;align-items:center;width:100%;text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
+.mode b{display:block;font-size:17px}
+.mode small{color:var(--mute)}
+.mode .ic{flex:none;font-size:26px;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;background:var(--track)}
+.mode[disabled]{opacity:.6;cursor:default}
+.tag{font-size:12px;font-weight:700;background:var(--accent);color:var(--on-accent);border-radius:99px;padding:2px 9px;margin-left:8px}
+.top{display:flex;justify-content:space-between;margin-bottom:12px}
+.btn{border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 14px;font-weight:700}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.bad{color:var(--bad)}
+.btn.wide{width:100%;margin-top:8px}
+.btn[disabled]{opacity:.5;cursor:default}
+.field{background:var(--surface);border:1.5px solid var(--line);border-radius:24px;padding:14px;margin-bottom:12px}
+.field h2{display:flex;justify-content:space-between;align-items:baseline;font-size:18px;margin:0 0 6px}
+.field h2 small{font-size:13px;font-weight:500;color:var(--mute)}
+.cap{font-size:13px;color:var(--mute);margin:8px 0 4px}
+.bench{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.bench>*{min-width:0}
+.tile{width:100%;display:flex;flex-direction:column;justify-content:space-between;text-align:left;min-height:84px;padding:8px 7px;border:1.5px dashed var(--line);border-radius:12px;background:transparent}
+.tile span{display:block}
+.tile.full{border-style:solid;background:var(--bg)}
+.tile.act{min-height:112px;padding:13px;border-radius:18px}
+.nm{font-weight:800;font-size:13px;line-height:1.15;overflow-wrap:anywhere}
+.act .nm{font-size:20px}
+.hp{font-size:12px;color:var(--mute);margin-top:2px}
+.act .hp{font-size:15px}
+.st{font-size:14px}
+.plus{margin:auto;font-size:24px;color:var(--mute)}
+.bar{height:6px;border-radius:9px;background:var(--track);overflow:hidden;margin-top:5px}
+.bar i{display:block;height:100%;border-radius:9px}
+.bar.big{height:12px;margin:6px 0 4px}
+.tile.ko{border-color:var(--bad)}
+.ko .nm{text-decoration:line-through;opacity:.75}
+.sheet{position:fixed;inset:0;z-index:5;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,12,24,.55)}
+.sheet[hidden]{display:none}
+.panel{width:100%;max-width:520px;max-height:90%;overflow:auto;background:var(--surface);border-radius:24px 24px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:8px 0}
+.row input{flex:1;margin:0}
+.big{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.mute{color:var(--mute);font-size:14px}
+.life{display:flex;align-items:baseline;gap:8px;margin-top:12px}
+.life b{font-size:64px;line-height:.95;letter-spacing:-.04em}
+.life span{color:var(--mute);font-size:18px}
+.life em{margin-left:auto;font-style:normal;font-weight:800;color:var(--bad)}
+.lbl{font-weight:800;margin:16px 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.chip{border:1.5px solid var(--line);background:var(--bg);border-radius:99px;padding:10px 15px;font-weight:700}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:12px;margin:6px 0}
+.err{color:var(--bad);min-height:1.3em;margin:4px 0 0;font-size:14px}
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+.res button{border:1.5px solid var(--line);background:var(--bg);border-radius:12px;padding:6px;text-align:center;font-size:12px;font-weight:700}
+.res img{width:100%;aspect-ratio:63/88;object-fit:contain;display:block;margin-bottom:4px}
+.res small{display:block;color:var(--mute);font-weight:500}
+.thumb{width:62px;flex:none;border-radius:6px}
+.tile.im{background-repeat:no-repeat;background-position:right 10px center;background-size:auto 86%;padding-right:84px}
+.cam{position:relative;background:#000;border-radius:16px;overflow:hidden;max-width:300px;margin:10px auto 0}
+.cam video{width:100%;display:block}
+.cam i{position:absolute;top:6%;height:88%;left:50%;aspect-ratio:63/88;transform:translateX(-50%);border:3px solid rgba(255,255,255,.7);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.4)}
+.note{color:var(--mute);font-size:13px;margin:8px 0 2px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="sheet" class="sheet" hidden></div>
+<script>
+const K='marcador-tcg-v1',$=s=>document.querySelector(s);
+const ST={poison:['☠️','Veneno'],burn:['🔥','Queimadura'],sleep:['💤','Dormindo'],para:['⚡','Paralisado'],conf:['💫','Confuso']};
+const EX=['sleep','para','conf'];
+let S=null,view='home',ui=null,armed=false,armT;
+try{S=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
+if(!S||!S.p)S=null;
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
+const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const rem=c=>Math.max(0,c.hp-c.dmg);
+const slot=(p,s)=>S.p[p].slots[s];
+const tone=p=>p>50?'var(--good)':p>25?'var(--warn)':'var(--bad)';
+const bar=(c,cls='')=>{const p=Math.round(rem(c)/c.hp*100);return `<span class="bar ${cls}"><i style="width:${p}%;background:${tone(p)}"></i></span>`};
+
+function tile(p,s){
+  const c=slot(p,s),a=s===0?' act':'',at=`data-a="open" data-p="${p}" data-s="${s}"`;
+  if(!c)return `<button class="tile${a}" ${at} aria-label="Adicionar Pokémon"><span class="plus">+</span></button>`;
+  const r=rem(c);
+  return `<button class="tile full${a}${c.img&&s===0?' im':''}${r?'':' ko'}"${c.img&&s===0?` style="background-image:url('${c.img}/low.webp')"`:''} ${at}><span class="nm">${esc(c.name)}</span><span><span class="st">${c.st.map(k=>ST[k][0]).join(' ')}</span><span class="hp">${r?r+' de '+c.hp:'Nocauteado'}</span>${bar(c)}</span></button>`;
+}
+function field(p,label){
+  const n=S.p[p].slots.filter(Boolean).length;
+  return `<section class="field"><h2>${label}<small>${n} em jogo</small></h2><div class="cap">Ativo</div>${tile(p,0)}<div class="cap">Banco</div><div class="bench">${[1,2,3,4,5].map(s=>tile(p,s)).join('')}</div></section>`;
+}
+function home(){
+  return `<h1>Marcador de vida</h1><p class="sub">Dano, condições e vida restante dos Pokémon na mesa.</p>
+  ${S?`<button class="mode" data-a="cont"><span class="ic">▶️</span><span><b>Continuar partida</b><small>Voltar de onde parou</small></span></button>`:''}
+  <button class="mode" data-a="new" data-m="solo"><span class="ic">🎯</span><span><b>Solo</b><small>Só o seu campo</small></span></button>
+  <button class="mode" data-a="new" data-m="duo"><span class="ic">🤝</span><span><b>2 jogadores, 1 celular</b><small>Seu campo e o do adversário</small></span></button>
+  <button class="mode" disabled><span class="ic">📡</span><span><b>Sala local<span class="tag">em breve</span></b><small>Cada um no seu celular. Você vê o campo do outro, mas só edita o seu.</small></span></button>`;
+}
+function game(){
+  const duo=S.mode==='duo';
+  return `<div class="top"><button class="btn" data-a="home">‹ Início</button><button class="btn bad" data-a="reset">${armed?'Toque para confirmar':'Limpar campo'}</button></div>`+(duo?field(1,'Jogador 2')+field(0,'Jogador 1'):field(0,'Seu campo'));
+}
+function addPanel(){
+  return `<div class="row"><div class="big">${ui.s?'Novo no banco':'Novo Pokémon ativo'}</div><button class="btn" data-a="close">Fechar</button></div>
+  <input id="nm" placeholder="Digite o nome para buscar a carta" autocomplete="off" maxlength="30">
+  <div id="res"></div>
+  <button class="btn wide" data-a="scan">Escanear carta</button>
+  <div id="cam"></div>
+  <p class="note">Sem resultado? Informe a vida à mão:</p>
+  <input id="hv" type="number" inputmode="numeric" placeholder="Vida (PS) da carta">
+  <div class="chips">${[60,90,120,150,180,230,300].map(v=>`<button class="chip" data-a="hp" data-v="${v}">${v}</button>`).join('')}</div>
+  <p id="err" class="err"></p>
+  <button class="btn pri wide" data-a="add">Colocar na mesa</button>`;
+}
+function cardPanel(c){
+  const r=rem(c);
+  return `<div class="row"><div><div class="big">${esc(c.name)}</div><div class="mute">${ui.s?'No banco':'Ativo'}, vida máxima ${c.hp}</div></div>${c.img?`<img class="thumb" src="${c.img}/high.webp" alt="">`:''}<button class="btn" data-a="close">Fechar</button></div>
+  <div class="life"><b style="${r?'':'color:var(--bad)'}">${r}</b><span>de ${c.hp} PS</span>${r?'':'<em>Nocauteado</em>'}</div>
+  ${bar(c,'big')}
+  <p class="lbl">Dano recebido (total ${c.dmg})</p>
+  <div class="chips">${[10,20,30,50].map(v=>`<button class="chip" data-a="dmg" data-v="${v}">+${v}</button>`).join('')}<button class="chip" data-a="dmg" data-v="-10">−10</button></div>
+  <div class="row"><input id="dv" type="number" inputmode="numeric" placeholder="Outro valor, ex.: 60"><button class="btn pri" data-a="apply">Aplicar</button></div>
+  <p class="lbl">Condições especiais</p>
+  <div class="chips">${Object.keys(ST).map(k=>`<button class="chip${c.st.includes(k)?' on':''}" data-a="st" data-k="${k}">${ST[k][0]} ${ST[k][1]}</button>`).join('')}</div>
+  <div class="row">${ui.s?'<button class="btn" data-a="swap">Trocar com o ativo</button>':'<span></span>'}<button class="btn bad" data-a="del">Remover da mesa</button></div>`;
+}
+const API='https://api.tcgdex.net/v2/',LANGS=['pt','en'];
+let tmr,stream,ocr;
+const setRes=h=>{const r=$('#res');if(r)r.innerHTML=h};
+const note=t=>setRes(`<p class="note">${t}</p>`);
+async function api(path){
+  for(const l of LANGS){
+    try{const r=await fetch(API+l+'/'+path);if(r.ok){const j=await r.json();if(!Array.isArray(j)||j.length)return j}}catch(e){}
+  }
+  return null;
+}
+async function search(name,num){
+  name=name.trim();
+  if(name.length<2){setRes('');return}
+  note('Buscando…');
+  let list=await api('cards?name='+encodeURIComponent(name));
+  if(!list){note('Nada encontrado (ou sem conexão). Digite nome e vida à mão.');return}
+  const hit=num?list.filter(c=>parseInt(c.localId,10)===num):[];
+  if(hit.length===1){pick(hit[0].id);return}
+  list=hit.concat(list.filter(c=>!hit.includes(c))).slice(0,12);
+  setRes(`<div class="res">${list.map(c=>`<button data-a="pick" data-id="${c.id}">${c.image?`<img loading="lazy" src="${c.image}/low.webp" alt="">`:''}${esc(c.name)}<small>${c.id}</small></button>`).join('')}</div>`);
+}
+async function pick(id){
+  note('Carregando carta…');
+  const c=await api('cards/'+id);
+  if(!c){note('Não consegui carregar a carta.');return}
+  if(c.hp>0){S.p[ui.p].slots[ui.s]={name:c.name,hp:+c.hp,dmg:0,st:[],img:c.image||''};ui=null;save();render()}
+  else{ui.img=c.image||'';$('#nm').value=c.name;$('#err').textContent='Esta carta não tem PS. Informe a vida para continuar.';setRes('')}
+}
+document.addEventListener('input',e=>{
+  if(e.target.id!=='nm')return;
+  clearTimeout(tmr);const v=e.target.value;tmr=setTimeout(()=>search(v),450);
+});
+async function startCam(){
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920}}})}
+  catch(e){note('Não consegui abrir a câmera. Permita o acesso e abra a página por HTTPS.');return}
+  $('#cam').innerHTML='<div class="cam"><video id="v" playsinline muted autoplay></video><i></i></div><button class="btn pri wide" data-a="snap">Ler carta</button><p class="note">Encaixe a carta na moldura, com boa luz.</p>';
+  $('#v').srcObject=stream;
+}
+function stopCam(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  const b=$('#cam');if(b)b.innerHTML='';
+}
+async function snap(){
+  const v=$('#v');if(!v||!v.videoWidth)return;
+  const vh=v.videoHeight,h=vh*.88,w=h*63/88,x=(v.videoWidth-w)/2,y=vh*.06;
+  const crop=(sx,sy,sw,sh)=>{const k=document.createElement('canvas'),f=Math.min(3,1400/sw);k.width=sw*f;k.height=sh*f;k.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,k.width,k.height);return k};
+  const top=crop(x,y,w*.72,h*.13),bot=crop(x,y+h*.88,w,h*.12);
+  note('Lendo a carta… (na primeira vez baixa o leitor de texto)');
+  try{
+    if(!ocr){
+      if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
+      ocr=await Tesseract.createWorker('por');
+    }
+    await ocr.setParameters({tessedit_char_whitelist:''});
+    const t1=(await ocr.recognize(top)).data.text;
+    await ocr.setParameters({tessedit_char_whitelist:'0123456789/ '});
+    const t2=(await ocr.recognize(bot)).data.text;
+    const nm=t1.split('\n').map(l=>l.replace(/[^A-Za-zÀ-ÿ' -]/g,' ').replace(/\s+/g,' ').trim()).sort((a,b)=>b.length-a.length)[0]||'';
+    const m=t2.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
+    stopCam();
+    if(!nm){note('Não consegui ler o nome. Tente de novo com mais luz ou digite à mão.');return}
+    $('#nm').value=nm;
+    await search(nm,m?parseInt(m[1],10):0);
+  }catch(e){stopCam();note('Falha ao ler a carta. Tente de novo ou digite o nome.')}
+}
+function render(){
+  if(!ui)stopCam();
+  $('#app').innerHTML=view==='game'&&S?game():home();
+  const el=$('#sheet'),c=ui&&slot(ui.p,ui.s);
+  el.hidden=!ui;
+  el.innerHTML=ui?`<div class="panel">${c?cardPanel(c):addPanel()}</div>`:'';
+}
+document.addEventListener('click',e=>{
+  if(e.target.id==='sheet'){ui=null;render();return}
+  const b=e.target.closest('[data-a]');if(!b)return;
+  const a=b.dataset.a,d=b.dataset,c=ui&&slot(ui.p,ui.s);
+  const done=()=>{save();render()};
+  if(a==='new'){S={mode:d.m,p:[0,1].map(()=>({slots:Array(6).fill(null)}))};view='game';done()}
+  else if(a==='cont'){view='game';render()}
+  else if(a==='home'){view='home';ui=null;render()}
+  else if(a==='reset'){
+    if(!armed){armed=true;armT=setTimeout(()=>{armed=false;render()},3000);render()}
+    else{clearTimeout(armT);armed=false;S.p.forEach(x=>x.slots.fill(null));done()}
+  }
+  else if(a==='open'){ui={p:+d.p,s:+d.s};render();setTimeout(()=>{const n=$('#nm');n&&n.focus()},60)}
+  else if(a==='close'){ui=null;render()}
+  else if(a==='hp'){$('#hv').value=d.v}
+  else if(a==='pick'){pick(d.id)}
+  else if(a==='scan'){startCam()}
+  else if(a==='snap'){snap()}
+  else if(a==='add'){
+    const n=$('#nm').value.trim(),h=parseInt($('#hv').value,10);
+    if(!n||!(h>0)){$('#err').textContent='Preencha o nome e a vida (PS) da carta.';return}
+    S.p[ui.p].slots[ui.s]={name:n,hp:h,dmg:0,st:[],img:ui.img||''};ui=null;done();
+  }
+  else if(!c)return;
+  else if(a==='dmg'||a==='apply'){
+    const v=a==='dmg'?+d.v:parseInt($('#dv').value,10);
+    if(!isFinite(v))return;
+    c.dmg=Math.min(c.hp,Math.max(0,c.dmg+v));done();
+  }
+  else if(a==='st'){
+    const k=d.k,i=c.st.indexOf(k);
+    if(i>=0)c.st.splice(i,1);
+    else{if(EX.includes(k))c.st=c.st.filter(x=>!EX.includes(x));c.st.push(k)}
+    done();
+  }
+  else if(a==='swap'){
+    const sl=S.p[ui.p].slots,t=sl[0];sl[0]=sl[ui.s];sl[ui.s]=t;
+    sl.forEach(x=>{if(x)x.st=[]});ui=null;done();
+  }
+  else if(a==='del'){S.p[ui.p].slots[ui.s]=null;ui=null;done()}
+});
+render();
+</script>
+</body>
+</html>
