@@ -76,6 +76,7 @@ input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1.5px
 .cam video{width:100%;display:block}
 .cam i{position:absolute;top:6%;height:88%;left:50%;aspect-ratio:63/88;transform:translateX(-50%);border:3px solid rgba(255,255,255,.7);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.4)}
 .note{color:var(--mute);font-size:13px;margin:8px 0 2px}
+#dbg canvas{display:block;max-width:100%;height:auto;margin:6px 0;border:1px solid var(--line);border-radius:6px}
 </style>
 </head>
 <body>
@@ -141,7 +142,7 @@ function cardPanel(c){
   <div class="row">${ui.s?'<button class="btn" data-a="swap">Trocar com o ativo</button>':'<span></span>'}<button class="btn bad" data-a="del">Remover da mesa</button></div>`;
 }
 const API='https://api.tcgdex.net/v2/',LANGS=['pt','en'];
-let tmr,stream,ocr;
+let tmr,stream,ocr,loop,busy=false,tries=0;
 const setRes=h=>{const r=$('#res');if(r)r.innerHTML=h};
 const note=t=>setRes(`<p class="note">${t}</p>`);
 async function api(path){
@@ -172,38 +173,96 @@ document.addEventListener('input',e=>{
   if(e.target.id!=='nm')return;
   clearTimeout(tmr);const v=e.target.value;tmr=setTimeout(()=>search(v),450);
 });
+const SKIP=/^(basico|básico|basic|fase|stage|pokemon|pokémon|evolui|evolves|from)$/i;
+const words=t=>(t.match(/[A-Za-zÀ-ÿ]{3,}/g)||[]).filter(w=>!SKIP.test(w));
+const parseNum=t=>{
+  const m=t.match(/(\d{1,3})\s*[\/|]\s*(\d{2,3})/);
+  if(m)return parseInt(m[1],10);
+  const r=(t.match(/\d{7}/)||[])[0];
+  return r&&r[3]==='1'?parseInt(r.slice(0,3),10):0;
+};
+const setSt=t=>{const e=$('#stt');if(e)e.textContent=t};
+function crop(v,sx,sy,sw,sh,maxw){
+  const k=document.createElement('canvas'),f=Math.min(3,maxw/sw);
+  k.width=Math.round(sw*f);k.height=Math.round(sh*f);
+  k.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,k.width,k.height);
+  return k;
+}
+function prep(k,bin){
+  const g=k.getContext('2d'),im=g.getImageData(0,0,k.width,k.height),d=im.data,n=k.width*k.height,gy=new Uint8Array(n),h=new Array(256).fill(0);
+  for(let i=0;i<n;i++){const y=(d[i*4]*.299+d[i*4+1]*.587+d[i*4+2]*.114)|0;gy[i]=y;h[y]++}
+  let lo=0,hi=255,a=0,t=128,wh=0;
+  while(lo<254&&(a+=h[lo])<n*.02)lo++;
+  a=0;while(hi>1&&(a+=h[hi])<n*.02)hi--;
+  if(bin){
+    let sum=0,sb=0,wb=0,mx=0;
+    for(let i=0;i<256;i++)sum+=i*h[i];
+    for(let i=0;i<256;i++){wb+=h[i];const wf=n-wb;if(!wb||!wf)continue;sb+=i*h[i];const m1=sb/wb,m2=(sum-sb)/wf,v=wb*wf*(m1-m2)*(m1-m2);if(v>mx){mx=v;t=i}}
+    for(let i=0;i<n;i++)if(gy[i]>t)wh++;
+  }
+  const inv=bin&&wh<n/2;
+  for(let i=0;i<n;i++){
+    let y=bin?(gy[i]>t?255:0):Math.min(255,Math.max(0,(gy[i]-lo)*255/Math.max(1,hi-lo)));
+    if(inv)y=255-y;
+    d[i*4]=d[i*4+1]=d[i*4+2]=y;
+  }
+  g.putImageData(im,0,0);return k;
+}
+async function ocrRead(k,psm,wl){
+  await ocr.setParameters({tessedit_pageseg_mode:psm,tessedit_char_whitelist:wl});
+  return (await ocr.recognize(k)).data.text;
+}
+async function loadOcr(){
+  if(ocr)return;
+  if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
+  ocr=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status)setSt('Preparando o leitor: '+m.status+' '+Math.round((m.progress||0)*100)+'%')}});
+}
 async function startCam(){
-  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920}}})}
+  stopCam();
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})}
   catch(e){note('Não consegui abrir a câmera. Permita o acesso e abra a página por HTTPS.');return}
-  $('#cam').innerHTML='<div class="cam"><video id="v" playsinline muted autoplay></video><i></i></div><button class="btn pri wide" data-a="snap">Ler carta</button><p class="note">Encaixe a carta na moldura, com boa luz.</p>';
-  $('#v').srcObject=stream;
+  $('#cam').innerHTML='<div class="cam"><video id="v" playsinline muted autoplay></video><i></i></div><p class="note" id="stt">Abrindo…</p><div id="dbg"></div><button class="btn wide" data-a="stopcam">Parar câmera</button>';
+  const v=$('#v');v.srcObject=stream;
+  try{await v.play()}catch(e){}
+  try{await stream.getVideoTracks()[0].applyConstraints({advanced:[{focusMode:'continuous'}]})}catch(e){}
+  try{await loadOcr()}catch(e){setSt('Não consegui baixar o leitor de texto. Verifique a internet.');return}
+  if(!stream)return;
+  tries=0;busy=false;setSt('Encaixe a carta na moldura, de frente e sem reflexo. Lendo automaticamente…');
+  loop=setInterval(attempt,900);
 }
 function stopCam(){
+  clearInterval(loop);busy=false;
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
   const b=$('#cam');if(b)b.innerHTML='';
 }
-async function snap(){
-  const v=$('#v');if(!v||!v.videoWidth)return;
-  const vh=v.videoHeight,h=vh*.88,w=h*63/88,x=(v.videoWidth-w)/2,y=vh*.06;
-  const crop=(sx,sy,sw,sh)=>{const k=document.createElement('canvas'),f=Math.min(3,1400/sw);k.width=sw*f;k.height=sh*f;k.getContext('2d').drawImage(v,sx,sy,sw,sh,0,0,k.width,k.height);return k};
-  const top=crop(x,y,w*.72,h*.13),bot=crop(x,y+h*.88,w,h*.12);
-  note('Lendo a carta… (na primeira vez baixa o leitor de texto)');
+async function attempt(){
+  const v=$('#v');
+  if(busy||!ocr||!v||!v.videoWidth)return;
+  busy=true;tries++;
   try{
-    if(!ocr){
-      if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
-      ocr=await Tesseract.createWorker('por');
+    const vh=v.videoHeight,h=vh*.88,w=h*63/88,x=(v.videoWidth-w)/2,y=vh*.06;
+    const nameC=bin=>prep(crop(v,x+w*.1,y+h*.02,w*.62,h*.11,1200),bin);
+    const numC=bin=>prep(crop(v,x,y+h*.9,w,h*.1,1400),bin);
+    const nb=nameC(true),mb=numC(true);
+    let ws=words(await ocrRead(nb,'11',''));
+    if(!ws.length)ws=words(await ocrRead(nameC(false),'11',''));
+    let num=parseNum(await ocrRead(mb,'11','0123456789/'));
+    if(!num)num=parseNum(await ocrRead(numC(false),'11','0123456789/'));
+    if(!stream)return;
+    ws=[...new Set(ws)].sort((a,b)=>b.length-a.length).slice(0,3);
+    const d=$('#dbg');if(d)d.replaceChildren(nb,mb);
+    setSt('Tentativa '+tries+': nome “'+(ws.join(', ')||'não li')+'”, número '+(num||'não li'));
+    for(const w1 of ws){
+      const list=await api('cards?name='+encodeURIComponent(w1));
+      if(!stream)return;
+      if(!list)continue;
+      const hit=num?list.filter(c=>parseInt(c.localId,10)===num):[];
+      if(hit.length===1||(!num&&list.length===1)){pick((hit[0]||list[0]).id);return}
+      if(hit.length>1){stopCam();$('#nm').value=w1;search(w1,num);return}
     }
-    await ocr.setParameters({tessedit_char_whitelist:''});
-    const t1=(await ocr.recognize(top)).data.text;
-    await ocr.setParameters({tessedit_char_whitelist:'0123456789/ '});
-    const t2=(await ocr.recognize(bot)).data.text;
-    const nm=t1.split('\n').map(l=>l.replace(/[^A-Za-zÀ-ÿ' -]/g,' ').replace(/\s+/g,' ').trim()).sort((a,b)=>b.length-a.length)[0]||'';
-    const m=t2.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
-    stopCam();
-    if(!nm){note('Não consegui ler o nome. Tente de novo com mais luz ou digite à mão.');return}
-    $('#nm').value=nm;
-    await search(nm,m?parseInt(m[1],10):0);
-  }catch(e){stopCam();note('Falha ao ler a carta. Tente de novo ou digite o nome.')}
+    if(tries>=5&&ws.length){const w1=ws[0];stopCam();$('#nm').value=w1;search(w1,num)}
+  }catch(e){setSt('Erro na leitura, tentando de novo…')}
+  finally{busy=false}
 }
 function render(){
   if(!ui)stopCam();
@@ -229,7 +288,7 @@ document.addEventListener('click',e=>{
   else if(a==='hp'){$('#hv').value=d.v}
   else if(a==='pick'){pick(d.id)}
   else if(a==='scan'){startCam()}
-  else if(a==='snap'){snap()}
+  else if(a==='stopcam'){stopCam()}
   else if(a==='add'){
     const n=$('#nm').value.trim(),h=parseInt($('#hv').value,10);
     if(!n||!(h>0)){$('#err').textContent='Preencha o nome e a vida (PS) da carta.';return}
